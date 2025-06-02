@@ -5,13 +5,11 @@ from tqdm import tqdm
 from samv2_handler import load_sam_image_model, run_sam_im_inference
 from PIL import Image
 from typing import Union
-import subprocess
 
-subprocess.run(
-    "pip install flash-attn --no-build-isolation",
-    env={"FLASH_ATTENTION_SKIP_CUDA_BUILD": "TRUE"},
-    shell=True,
-)
+torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
+if torch.cuda.get_device_properties(0).major >= 8:
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
 
 
 def download_checkpoints():
@@ -52,6 +50,8 @@ def load_im_model(variant, auto_mask_gen: bool = False):
 
 
 @spaces.GPU
+@torch.inference_mode()
+@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def detect_image(
     im: Image.Image,
     variant: str,
