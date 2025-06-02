@@ -5,6 +5,13 @@ from tqdm import tqdm
 from samv2_handler import load_sam_image_model, run_sam_im_inference
 from PIL import Image
 from typing import Union
+import subprocess
+
+subprocess.run(
+    "pip install flash-attn --no-build-isolation",
+    env={"FLASH_ATTENTION_SKIP_CUDA_BUILD": "TRUE"},
+    shell=True,
+)
 
 
 def download_checkpoints():
