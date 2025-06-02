@@ -81,7 +81,12 @@ with gr.Blocks() as demo:
                 ),
                 gr.Textbox(
                     label='Bounding Boxes (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
-                    optional=True,
+                ),
+                gr.Textbox(
+                    label='Points (JSON list of dicts: [{"x":..., "y":...}, ...])',
+                ),
+                gr.Textbox(
+                    label="Points Label (JSON list of integar)",
                 ),
             ],
             outputs=gr.JSON(label="Output JSON"),
