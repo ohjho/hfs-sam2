@@ -1,8 +1,40 @@
 import gradio as gr
-import spaces, torch
+import spaces, torch, os, requests, json
+from pathlib import Path
+from tqdm import tqdm
 from samv2_handler import load_sam_image_model, run_sam_im_inference
 from PIL import Image
 from typing import Union
+
+
+def download_checkpoints():
+    checkpoint_dir = Path("checkpoints")
+    checkpoint_dir.mkdir(exist_ok=True)
+
+    # Read URLs from the file
+    with open(checkpoint_dir / "sam2_checkpoints_url.txt", "r") as f:
+        urls = [url.strip() for url in f.readlines() if url.strip()]
+
+    for url in urls:
+        filename = url.split("/")[-1]
+        output_path = checkpoint_dir / filename
+
+        if output_path.exists():
+            print(f"Checkpoint {filename} already exists, skipping...")
+            continue
+
+        print(f"Downloading {filename}...")
+        response = requests.get(url, stream=True)
+        total_size = int(response.headers.get("content-length", 0))
+
+        with open(output_path, "wb") as f:
+            with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        pbar.update(len(chunk))
+
+        print(f"Downloaded {filename} successfully!")
 
 
 @spaces.GPU
@@ -55,6 +87,8 @@ with gr.Blocks() as demo:
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Images",
         )
+# Download checkpoints before launching the app
+download_checkpoints()
 demo.launch(
     mcp_server=True, app_kwargs={"docs_url": "/docs"}  # add FastAPI Swagger API Docs
 )
