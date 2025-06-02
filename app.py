@@ -79,7 +79,7 @@ with gr.Blocks() as demo:
                     label="Model Variant",
                     choices=["tiny", "small", "base_plus", "large"],
                 ),
-                gr.JSON(
+                gr.Textbox(
                     label='Bounding Boxes (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
                     optional=True,
                 ),
