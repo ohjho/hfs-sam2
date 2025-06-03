@@ -87,19 +87,23 @@ def process_image(
     logger.debug(f"bboxes type: {type(bboxes)}, value: {bboxes}")
     has_bboxes = type(bboxes) != type(None) and bboxes != ""
     has_points = type(points) != type(None) and points != ""
+    has_point_labels = type(point_labels) != type(None) and point_labels != ""
     assert has_bboxes or has_points, f"either bboxes or points must be provided."
     if has_points:
-        assert len(points) == len(
-            point_labels
-        ), f"{len(points)} points provided but there are {len(point_labels)} labels."
+        assert has_point_labels, f"point_labels is required if points are provided."
 
     bboxes = json.loads(bboxes) if isinstance(bboxes, str) and has_bboxes else bboxes
     points = json.loads(points) if isinstance(points, str) and has_points else points
     point_labels = (
         json.loads(point_labels)
-        if isinstance(point_labels, str) and has_points
+        if isinstance(point_labels, str) and has_point_labels
         else point_labels
     )
+    if has_points:
+        assert len(points) == len(
+            point_labels
+        ), f"{len(points)} points provided but there are {len(point_labels)} labels."
+
     model = load_im_model(variant=variant)
     return run_sam_im_inference(
         model,
@@ -148,17 +152,17 @@ with gr.Blocks() as demo:
                     choices=["tiny", "small", "base_plus", "large"],
                 ),
                 gr.Textbox(
-                    label='Bounding Boxes (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
+                    label="Bounding Boxes",
                     value=None,
                     lines=5,
                     placeholder='JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]',
                 ),
                 gr.Textbox(
-                    label='Points (JSON list of dicts: [{"x":..., "y":...}, ...])',
+                    label="Points",
+                    lines=3,
+                    placeholder='JSON list of dicts: [{"x":..., "y":...}, ...]',
                 ),
-                gr.Textbox(
-                    label="Points Label (JSON list of integar)",
-                ),
+                gr.Textbox(label="Points' Labels", placeholder="JSON List of Integars"),
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Images",
