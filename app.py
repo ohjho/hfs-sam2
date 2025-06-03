@@ -11,6 +11,7 @@ from samv2_handler import (
 )
 from PIL import Image
 from typing import Union
+import numpy as np
 
 torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 if torch.cuda.get_device_properties(0).major >= 8:
@@ -75,26 +76,39 @@ def process_image(
 
     Args:
         im: Pillow Image
-        object_name: the object you would like to detect
-        mode: point or object_detection
+        variant: SAM2 model variant
+        bboxes: bounding boxes of objects to segment, expressed as a list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]
+        points: points of objects to segment, expressed as a list of dicts [{"x":..., "y":...}, ...]
+        point_labels: list of integar
     Returns:
-        list: a list of masks
+        list: a list of masks in the form of bit64 encoded strings
     """
+    # input validation
     logger.debug(f"bboxes type: {type(bboxes)}, value: {bboxes}")
-    bboxes = (
-        json.loads(bboxes)
-        if isinstance(bboxes, str) and type(bboxes) != type(None)
-        else bboxes
-    )
-    assert bboxes or points, f"either bboxes or points must be provided."
-    if points:
+    has_bboxes = type(bboxes) != type(None) and bboxes != ""
+    has_points = type(points) != type(None) and points != ""
+    assert has_bboxes or has_points, f"either bboxes or points must be provided."
+    if has_points:
         assert len(points) == len(
             point_labels
         ), f"{len(points)} points provided but there are {len(point_labels)} labels."
 
+    bboxes = json.loads(bboxes) if isinstance(bboxes, str) and has_bboxes else bboxes
+    points = json.loads(points) if isinstance(points, str) and has_points else points
+    point_labels = (
+        json.loads(point_labels)
+        if isinstance(point_labels, str) and has_points
+        else point_labels
+    )
     model = load_im_model(variant=variant)
     return run_sam_im_inference(
-        model, image=im, bboxes=bboxes, get_pil_mask=False, b64_encode_mask=True
+        model,
+        image=im,
+        bboxes=bboxes,
+        points=points,
+        point_labels=point_labels,
+        get_pil_mask=False,
+        b64_encode_mask=True,
     )
 
 
@@ -112,20 +126,14 @@ def process_video(video_path: str, variant: str, masks: Union[list, str]):
     Returns:
         list: a list of masks
     """
-    bboxes = (
-        json.loads(bboxes)
-        if isinstance(bboxes, str) and type(bboxes) != type(None)
-        else bboxes
-    )
-    assert bboxes or points, f"either bboxes or points must be provided."
-    if points:
-        assert len(points) == len(
-            point_labels
-        ), f"{len(points)} points provided but there are {len(point_labels)} labels."
-
-    model = load_im_model(variant=variant)
-    return run_sam_im_inference(
-        model, image=im, bboxes=bboxes, get_pil_mask=False, b64_encode_mask=True
+    model = load_vid_model(variant=variant)
+    return run_sam_video_inference(
+        model,
+        video_path=video_path,
+        masks=np.array(masks),
+        device="cuda",
+        do_tidy_up=True,
+        drop_mask=False,
     )
 
 
@@ -154,6 +162,25 @@ with gr.Blocks() as demo:
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Images",
+        )
+    with gr.Tab("Videos"):
+        gr.Interface(
+            fn=process_video,
+            inputs=[
+                gr.Video(label="Input Video"),
+                gr.Dropdown(
+                    label="Model Variant",
+                    choices=["tiny", "small", "base_plus", "large"],
+                ),
+                gr.Textbox(
+                    label='Masks for Objects of Interest in the First Frame (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
+                    value=None,
+                    lines=5,
+                    placeholder='JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]',
+                ),
+            ],
+            outputs=gr.JSON(label="Output JSON"),
+            title="SAM2 for Videos",
         )
 
 # Download checkpoints before launching the app
