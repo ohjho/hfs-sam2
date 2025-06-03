@@ -69,7 +69,17 @@ def detect_image(
     Returns:
         list: a list of masks
     """
-    bboxes = json.loads(bboxes) if isinstance(bboxes, str) else bboxes
+    bboxes = (
+        json.loads(bboxes)
+        if isinstance(bboxes, str) and type(bboxes) != type(None)
+        else bboxes
+    )
+    assert bboxes or points, f"either bboxes or points must be provided."
+    if points:
+        assert len(points) == len(
+            point_labels
+        ), f"{len(points)} points provided but there are {len(point_labels)} labels."
+
     model = load_im_model(variant=variant)
     return run_sam_im_inference(
         model, image=im, bboxes=bboxes, get_pil_mask=False, b64_encode_mask=True
