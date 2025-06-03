@@ -2,6 +2,9 @@ import gradio as gr
 import spaces, torch, os, requests, json
 from pathlib import Path
 from tqdm import tqdm
+from PIL import Image
+from typing import Union
+import numpy as np
 from samv2_handler import (
     load_sam_image_model,
     run_sam_im_inference,
@@ -9,9 +12,7 @@ from samv2_handler import (
     run_sam_video_inference,
     logger,
 )
-from PIL import Image
-from typing import Union
-import numpy as np
+from toolbox.mask_encoding import b64_mask_decode
 
 torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 if torch.cuda.get_device_properties(0).major >= 8:
@@ -125,15 +126,22 @@ def process_video(video_path: str, variant: str, masks: Union[list, str]):
     Args:
         video_path: path to video object
         variant: SAMv2's model variant
-        masks: a list of masks for the first frame of the video, indicating the objects to be tracked
+        masks: a list of b64 encoded masks for the first frame of the video, indicating the objects to be tracked
     Returns:
         list: a list of masks
     """
     model = load_vid_model(variant=variant)
+    masks = json.loads(masks) if isinstance(masks, str) else masks
+    logger.debug(f"masks---\n{masks}")
+    masks = [
+        m[2:-1].encode() if m.startswith("b'") and m.endswith("'") else m for m in masks
+    ]  # expect the b'' literal to be included
+    masks = np.array([b64_mask_decode(m).astype(np.uint8) for m in masks])
+    logger.debug(f"masks---\n{masks}")
     return run_sam_video_inference(
         model,
         video_path=video_path,
-        masks=np.array(masks),
+        masks=masks,
         device="cuda",
         do_tidy_up=True,
         drop_mask=False,
