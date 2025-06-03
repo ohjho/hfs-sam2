@@ -2,7 +2,13 @@ import gradio as gr
 import spaces, torch, os, requests, json
 from pathlib import Path
 from tqdm import tqdm
-from samv2_handler import load_sam_image_model, run_sam_im_inference
+from samv2_handler import (
+    load_sam_image_model,
+    run_sam_im_inference,
+    load_sam_video_model,
+    run_sam_video_inference,
+    logger,
+)
 from PIL import Image
 from typing import Union
 
@@ -50,9 +56,52 @@ def load_im_model(variant, auto_mask_gen: bool = False):
 
 
 @spaces.GPU
+def load_vid_model(variant):
+    return load_sam_video_model(variant=variant, device="cuda")
+
+
+@spaces.GPU
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def detect_image(
+def segment_image(
+    im: Image.Image,
+    variant: str,
+    bboxes: Union[list, str] = None,
+    points: Union[list, str] = None,
+    point_labels: Union[list, str] = None,
+):
+    """
+    SAM2 Image Segmentation
+
+    Args:
+        im: Pillow Image
+        object_name: the object you would like to detect
+        mode: point or object_detection
+    Returns:
+        list: a list of masks
+    """
+    logger.debug(f"bboxes type: {type(bboxes)}, value: {bboxes}")
+    bboxes = (
+        json.loads(bboxes)
+        if isinstance(bboxes, str) and type(bboxes) != type(None)
+        else bboxes
+    )
+    assert bboxes or points, f"either bboxes or points must be provided."
+    if points:
+        assert len(points) == len(
+            point_labels
+        ), f"{len(points)} points provided but there are {len(point_labels)} labels."
+
+    model = load_im_model(variant=variant)
+    return run_sam_im_inference(
+        model, image=im, bboxes=bboxes, get_pil_mask=False, b64_encode_mask=True
+    )
+
+
+@spaces.GPU
+@torch.inference_mode()
+@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+def segment_video(
     im: Image.Image,
     variant: str,
     bboxes: Union[list, str] = None,
@@ -98,6 +147,9 @@ with gr.Blocks() as demo:
                 ),
                 gr.Textbox(
                     label='Bounding Boxes (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
+                    value=None,
+                    lines=5,
+                    placeholder='JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]',
                 ),
                 gr.Textbox(
                     label='Points (JSON list of dicts: [{"x":..., "y":...}, ...])',
@@ -109,6 +161,7 @@ with gr.Blocks() as demo:
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Images",
         )
+
 # Download checkpoints before launching the app
 download_checkpoints()
 demo.launch(
