@@ -63,7 +63,7 @@ def load_vid_model(variant):
 @spaces.GPU
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def segment_image(
+def process_image(
     im: Image.Image,
     variant: str,
     bboxes: Union[list, str] = None,
@@ -101,20 +101,14 @@ def segment_image(
 @spaces.GPU
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def segment_video(
-    im: Image.Image,
-    variant: str,
-    bboxes: Union[list, str] = None,
-    points: Union[list, str] = None,
-    point_labels: Union[list, str] = None,
-):
+def process_video(video_path: str, variant: str, masks: Union[list, str]):
     """
-    SAM2 Image Segmentation
+    SAM2 Video Segmentation
 
     Args:
-        im: Pillow Image
-        object_name: the object you would like to detect
-        mode: point or object_detection
+        video_path: path to video object
+        variant: SAMv2's model variant
+        masks: a list of masks for the first frame of the video, indicating the objects to be tracked
     Returns:
         list: a list of masks
     """
@@ -138,7 +132,7 @@ def segment_video(
 with gr.Blocks() as demo:
     with gr.Tab("Images"):
         gr.Interface(
-            fn=detect_image,
+            fn=process_image,
             inputs=[
                 gr.Image(label="Input Image", type="pil"),
                 gr.Dropdown(
