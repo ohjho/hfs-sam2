@@ -84,7 +84,6 @@ def process_image(
         list: a list of masks in the form of bit64 encoded strings
     """
     # input validation
-    logger.debug(f"bboxes type: {type(bboxes)}, value: {bboxes}")
     has_bboxes = type(bboxes) != type(None) and bboxes != ""
     has_points = type(points) != type(None) and points != ""
     has_point_labels = type(point_labels) != type(None) and point_labels != ""
@@ -166,6 +165,7 @@ with gr.Blocks() as demo:
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Images",
+            api_name="process_image",
         )
     with gr.Tab("Videos"):
         gr.Interface(
@@ -185,6 +185,7 @@ with gr.Blocks() as demo:
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Videos",
+            api_name="process_video",
         )
 
 # Download checkpoints before launching the app
