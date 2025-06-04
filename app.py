@@ -119,7 +119,9 @@ def process_image(
 @spaces.GPU
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-def process_video(video_path: str, variant: str, masks: Union[list, str]):
+def process_video(
+    video_path: str, variant: str, masks: Union[list, str], drop_masks: bool = False
+):
     """
     SAM2 Video Segmentation
 
@@ -144,7 +146,7 @@ def process_video(video_path: str, variant: str, masks: Union[list, str]):
         masks=masks,
         device="cuda",
         do_tidy_up=True,
-        drop_mask=False,
+        drop_mask=drop_masks,
         async_frame_load=True,
     )
 
@@ -193,6 +195,7 @@ with gr.Blocks() as demo:
                     JSON list of base64 encoded masks, e.g.: ["b'iVBORw0KGgoAAAANSUhEUgAABDgAAAeAAQAAAAADGtqnAAAXz...'",...]
                     """,
                 ),
+                gr.Checkbox(label="remove base64 encoded masks from result JSON"),
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Videos",
