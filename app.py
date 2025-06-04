@@ -128,7 +128,7 @@ def process_video(video_path: str, variant: str, masks: Union[list, str]):
         variant: SAMv2's model variant
         masks: a list of b64 encoded masks for the first frame of the video, indicating the objects to be tracked
     Returns:
-        list: a list of masks
+        list: a list of tracked objects expressed as a list of dictionary [{"frame":..., "track_id":..., "x":..., "y":...,"w":...,"h":...,"conf":..., "mask_b64":...},...]
     """
     model = load_vid_model(variant=variant)
     masks = json.loads(masks) if isinstance(masks, str) else masks
@@ -145,6 +145,7 @@ def process_video(video_path: str, variant: str, masks: Union[list, str]):
         device="cuda",
         do_tidy_up=True,
         drop_mask=False,
+        async_frame_load=True,
     )
 
 
@@ -185,10 +186,12 @@ with gr.Blocks() as demo:
                     choices=["tiny", "small", "base_plus", "large"],
                 ),
                 gr.Textbox(
-                    label='Masks for Objects of Interest in the First Frame (JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...])',
+                    label="Masks for Objects of Interest in the First Frame",
                     value=None,
                     lines=5,
-                    placeholder='JSON list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]',
+                    placeholder="""
+                    JSON list of base64 encoded masks, e.g.: ["b'iVBORw0KGgoAAAANSUhEUgAABDgAAAeAAQAAAAADGtqnAAAXz...'",...]
+                    """,
                 ),
             ],
             outputs=gr.JSON(label="Output JSON"),

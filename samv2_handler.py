@@ -160,6 +160,7 @@ def run_sam_video_inference(
     every_x: int = None,
     do_tidy_up: bool = False,
     drop_mask: bool = True,
+    async_frame_load: bool = False,
 ):
     # put video frames into directory
     # TODO:
@@ -177,7 +178,9 @@ def run_sam_video_inference(
     w = vinfo["frame_width"]
     h = vinfo["frame_height"]
 
-    inference_state = model.init_state(video_path=vframes_dir, device=device)
+    inference_state = model.init_state(
+        video_path=vframes_dir, device=device, async_loading_frames=async_frame_load
+    )
     for i, mask in enumerate(masks):
         model.add_new_mask(
             inference_state=inference_state, frame_idx=0, obj_id=i, mask=mask
