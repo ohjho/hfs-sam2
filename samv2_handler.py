@@ -145,7 +145,7 @@ def run_sam_im_inference(
             else:
                 output_masks.append(mask.squeeze().astype(np.uint8))
         return (
-            [b64_mask_encode(m) for m in output_masks]
+            [b64_mask_encode(m).decode("ascii") for m in output_masks]
             if b64_encode_mask
             else output_masks
         )
@@ -207,7 +207,7 @@ def run_sam_video_inference(
                 "conf": 1,
             }
             if not drop_mask:
-                det["mask_b64"] = b64_mask_encode(mask)
+                det["mask_b64"] = b64_mask_encode(mask).decode("ascii")
             detections.append(det)
 
     if do_tidy_up:
