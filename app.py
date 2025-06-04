@@ -116,7 +116,7 @@ def process_image(
     )
 
 
-@spaces.GPU
+@spaces.GPU(duration=300)
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def process_video(
