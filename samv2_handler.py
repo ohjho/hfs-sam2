@@ -161,6 +161,7 @@ def run_sam_video_inference(
     do_tidy_up: bool = False,
     drop_mask: bool = True,
     async_frame_load: bool = False,
+    ref_frame_idx: int = 0,
 ):
     # put video frames into directory
     # TODO:
@@ -183,7 +184,10 @@ def run_sam_video_inference(
     )
     for i, mask in enumerate(masks):
         model.add_new_mask(
-            inference_state=inference_state, frame_idx=0, obj_id=i, mask=mask
+            inference_state=inference_state,
+            frame_idx=ref_frame_idx,
+            obj_id=i,
+            mask=mask,
         )
     masks_generator = model.propagate_in_video(inference_state)
 

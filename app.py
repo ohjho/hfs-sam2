@@ -116,11 +116,17 @@ def process_image(
     )
 
 
-@spaces.GPU(duration=300)
+@spaces.GPU(
+    duration=120
+)  # user must have 2-minute of inference time left at the time of calling
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def process_video(
-    video_path: str, variant: str, masks: Union[list, str], drop_masks: bool = False
+    video_path: str,
+    variant: str,
+    masks: Union[list, str],
+    drop_masks: bool = False,
+    ref_frame_idx: int = 0,
 ):
     """
     SAM2 Video Segmentation
@@ -148,6 +154,7 @@ def process_video(
         do_tidy_up=True,
         drop_mask=drop_masks,
         async_frame_load=True,
+        ref_frame_idx=ref_frame_idx,
     )
 
 
@@ -196,6 +203,11 @@ with gr.Blocks() as demo:
                     """,
                 ),
                 gr.Checkbox(label="remove base64 encoded masks from result JSON"),
+                gr.Number(
+                    label="frame index for the provided object masks",
+                    value=0,
+                    precision=0,
+                ),
             ],
             outputs=gr.JSON(label="Output JSON"),
             title="SAM2 for Videos",
