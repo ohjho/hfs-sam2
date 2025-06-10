@@ -127,6 +127,7 @@ def process_video(
     masks: Union[list, str],
     drop_masks: bool = False,
     ref_frame_idx: int = 0,
+    async_frame_load: bool = True,
 ):
     """
     SAM2 Video Segmentation
@@ -153,7 +154,7 @@ def process_video(
         device="cuda",
         do_tidy_up=True,
         drop_mask=drop_masks,
-        async_frame_load=True,
+        async_frame_load=async_frame_load,
         ref_frame_idx=ref_frame_idx,
     )
 
@@ -202,11 +203,20 @@ with gr.Blocks() as demo:
                     JSON list of base64 encoded masks, e.g.: ["b'iVBORw0KGgoAAAANSUhEUgAABDgAAAeAAQAAAAADGtqnAAAXz...'",...]
                     """,
                 ),
-                gr.Checkbox(label="remove base64 encoded masks from result JSON"),
+                gr.Checkbox(
+                    label="Drop Masks",
+                    info="remove base64 encoded masks from result JSON",
+                    value=True,
+                ),
                 gr.Number(
-                    label="frame index for the provided object masks",
+                    label="Reference Frame Index",
+                    info="frame index for the provided object masks",
                     value=0,
                     precision=0,
+                ),
+                gr.Checkbox(
+                    label="async frame load",
+                    info="start inference in parallel to frame loading",
                 ),
             ],
             outputs=gr.JSON(label="Output JSON"),
