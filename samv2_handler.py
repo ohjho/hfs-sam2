@@ -9,10 +9,11 @@ from sam2.automatic_mask_generator import SAM2AutomaticMaskGenerator
 from sam2.utils.misc import variant_to_config_mapping
 from sam2.utils.visualization import show_masks
 from ffmpeg_extractor import extract_frames, logger
-from visualizer import annotate_masks, mask_to_xyxy
+from visualizer import mask_to_xyxy
 from toolbox.vid_utils import VidInfo, VidReader
 from toolbox.mask_encoding import b64_mask_encode
-from toolbox.img_utils import get_pil_im
+
+# from toolbox.img_utils import get_pil_im
 
 variant_checkpoints_mapping = {
     "tiny": "checkpoints/sam2_hiera_tiny.pt",
@@ -232,13 +233,13 @@ def run_sam_video_inference(
     logger.debug(f"model initiated with object_ids of len {len(object_ids)}")
     init_masks = (mask_logits > 0.0).cpu().numpy().astype(np.uint8)
     init_masks = [m.squeeze() for m in init_masks]
-    ref_frame_im = get_pil_im(np.array(vr.get_data(ref_frame_idx)))
-    init_masks_im_fp = os.path.join(vframes_dir, f"model_init_masks.jpg")
-    input_masks_im_fp = os.path.join(vframes_dir, f"input_masks.jpg")
-    annotate_masks(ref_frame_im, init_masks).save(init_masks_im_fp)
-    annotate_masks(ref_frame_im, masks).save(input_masks_im_fp)
-    logger.debug(f"masks received by model visualized at {init_masks_im_fp}")
-    logger.debug(f"masks provided to model visualized at {input_masks_im_fp}")
+    # ref_frame_im = get_pil_im(np.array(vr.get_data(ref_frame_idx)))
+    # init_masks_im_fp = os.path.join(vframes_dir, f"model_init_masks.jpg")
+    # input_masks_im_fp = os.path.join(vframes_dir, f"input_masks.jpg")
+    # annotate_masks(ref_frame_im, init_masks).save(init_masks_im_fp)
+    # annotate_masks(ref_frame_im, masks).save(input_masks_im_fp)
+    # logger.debug(f"masks received by model visualized at {init_masks_im_fp}")
+    # logger.debug(f"masks provided to model visualized at {input_masks_im_fp}")
 
     masks_generator = model.propagate_in_video(inference_state)
     detections = unpack_masks(

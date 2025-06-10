@@ -1,8 +1,10 @@
 from PIL import Image, ImageColor
-import matplotlib.colors as mcolors
+
+# import matplotlib.colors as mcolors
 import numpy as np
-from toolbox.mask_encoding import b64_mask_decode
-from toolbox.img_utils import im_draw_bbox, im_draw_point, im_color_mask
+
+# from toolbox.mask_encoding import b64_mask_decode
+# from toolbox.img_utils import im_draw_bbox, im_draw_point, im_color_mask
 
 
 def mask_to_xyxy(mask: np.ndarray, verbose: bool = False) -> tuple:
