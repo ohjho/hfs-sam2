@@ -135,7 +135,10 @@ def process_video(
     Args:
         video_path: path to video object
         variant: SAMv2's model variant
-        masks: a list of b64 encoded masks for the first frame of the video, indicating the objects to be tracked
+        masks: a list of base64 encoded masks for the reference frame, indicating the objects to be tracked
+        drop_masks: whether to include the base64 encoded mask for each tracked object, if not then only bounding box information will be available
+        ref_frame_idx: the frame index of the reference frame
+        async_frame_load: whether to load frames asyncholously while doing video propogation which will improve inference time
     Returns:
         list: a list of tracked objects expressed as a list of dictionary [{"frame":..., "track_id":..., "x":..., "y":...,"w":...,"h":...,"conf":..., "mask_b64":...},...]
     """
