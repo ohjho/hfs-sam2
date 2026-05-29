@@ -85,15 +85,24 @@ def run_sam_im_inference(
             point_labels
         ), f"{len(points)} points provided but {len(point_labels)} labels given."
 
-    # parse provided bboxes / points into pydantic models
-    bboxes = (
-        [bbox_xyxy(**bbox) if isinstance(bbox, dict) else bbox for bbox in bboxes]
-        if bboxes
-        else []
-    )
-    points = (
-        [point_xy(**p) if isinstance(p, dict) else p for p in points] if points else []
-    )
+    # parse provided bboxes / points into pydantic models, accepting either the
+    # dict form ({"x0":..,...} / {"x":..,..}) or the bare-list form ([x0,y0,x1,y1] / [x,y])
+    def _to_bbox(b):
+        if isinstance(b, bbox_xyxy):
+            return b
+        if isinstance(b, dict):
+            return bbox_xyxy(**b)
+        return bbox_xyxy(x0=b[0], y0=b[1], x1=b[2], y1=b[3])
+
+    def _to_point(p):
+        if isinstance(p, point_xy):
+            return p
+        if isinstance(p, dict):
+            return point_xy(**p)
+        return point_xy(x=p[0], y=p[1])
+
+    bboxes = [_to_bbox(b) for b in bboxes] if bboxes else []
+    points = [_to_point(p) for p in points] if points else []
 
     image = image.convert("RGB")
     device = sam_model.device
