@@ -1,7 +1,5 @@
 import gradio as gr
-import spaces, torch, os, requests, json
-from pathlib import Path
-from tqdm import tqdm
+import spaces, torch, os, json
 from PIL import Image
 from typing import Union
 import numpy as np
@@ -20,41 +18,9 @@ if torch.cuda.get_device_properties(0).major >= 8:
     torch.backends.cudnn.allow_tf32 = True
 
 
-def download_checkpoints():
-    checkpoint_dir = Path("checkpoints")
-    checkpoint_dir.mkdir(exist_ok=True)
-
-    # Read URLs from the file
-    with open(checkpoint_dir / "sam2_checkpoints_url.txt", "r") as f:
-        urls = [url.strip() for url in f.readlines() if url.strip()]
-
-    for url in urls:
-        filename = url.split("/")[-1]
-        output_path = checkpoint_dir / filename
-
-        if output_path.exists():
-            print(f"Checkpoint {filename} already exists, skipping...")
-            continue
-
-        print(f"Downloading {filename}...")
-        response = requests.get(url, stream=True)
-        total_size = int(response.headers.get("content-length", 0))
-
-        with open(output_path, "wb") as f:
-            with tqdm(total=total_size, unit="B", unit_scale=True) as pbar:
-                for chunk in response.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        pbar.update(len(chunk))
-
-        print(f"Downloaded {filename} successfully!")
-
-
 @spaces.GPU
-def load_im_model(variant, auto_mask_gen: bool = False):
-    return load_sam_image_model(
-        variant=variant, device="cuda", auto_mask_gen=auto_mask_gen
-    )
+def load_im_model(variant):
+    return load_sam_image_model(variant=variant, device="cuda")
 
 
 @spaces.GPU
@@ -111,7 +77,6 @@ def process_image(
         bboxes=bboxes,
         points=points,
         point_labels=point_labels,
-        get_pil_mask=False,
         b64_encode_mask=True,
     )
 
@@ -227,8 +192,7 @@ with gr.Blocks() as demo:
             api_name="process_video",
         )
 
-# Download checkpoints before launching the app
-download_checkpoints()
+# Model weights are auto-downloaded from the HuggingFace Hub on first use.
 demo.launch(
     mcp_server=True, app_kwargs={"docs_url": "/docs"}  # add FastAPI Swagger API Docs
 )
