@@ -127,9 +127,7 @@ def run_sam_im_inference(
         outputs.pred_masks.cpu(), inputs["original_sizes"]
     )[0]
 
-    output_masks = [
-        np.asarray(mask).squeeze().astype(np.uint8) for mask in masks
-    ]
+    output_masks = [np.asarray(mask).squeeze().astype(np.uint8) for mask in masks]
     return (
         [b64_mask_encode(m).decode("ascii") for m in output_masks]
         if b64_encode_mask
@@ -226,15 +224,19 @@ def run_sam_video_inference(
     frames = [Image.open(fp).convert("RGB") for fp in frame_paths]
 
     session = processor.init_video_session(video=frames, inference_device=device)
+    # Seed all objects in a single call. add_inputs_to_inference_session overwrites
+    # session.obj_with_new_inputs on every call, so adding masks one-per-call would leave
+    # only the last object registered as "new" -- the earlier objects would then be treated
+    # as non-initial-conditioning frames and crash gathering memory that doesn't exist yet.
+    processor.add_inputs_to_inference_session(
+        inference_session=session,
+        frame_idx=ref_frame_idx,
+        obj_ids=list(range(len(masks))),
+        input_masks=[m for m in masks],
+    )
     for mask_idx, mask in enumerate(masks):
-        processor.add_inputs_to_inference_session(
-            inference_session=session,
-            frame_idx=ref_frame_idx,
-            obj_ids=mask_idx,
-            input_masks=mask,
-        )
         logger.debug(
-            f"adding mask {mask_idx} of shape {mask.shape} for frame {ref_frame_idx}, xyxy: {mask_to_xyxy(mask)}"
+            f"added mask {mask_idx} of shape {mask.shape} for frame {ref_frame_idx}, xyxy: {mask_to_xyxy(mask)}"
         )
 
     # seed the reference frame
