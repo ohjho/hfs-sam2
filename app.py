@@ -37,18 +37,17 @@ def process_image(
     bboxes: Union[list, str] = None,
     points: Union[list, str] = None,
     point_labels: Union[list, str] = None,
-):
-    """
-    SAM2 Image Segmentation
+) -> list[str]:
+    """SAM2 image segmentation: segment objects in an image from box and/or point prompts and return their masks.
+
+    Provide prompts as bounding boxes and/or points (points require point_labels). Returns a JSON list of segmentation masks, one mask per prompt -- one mask per bounding box, or a single mask for a points-only prompt -- in the same order as the input prompts. Each mask is a base64-encoded 1-bit (binary) PNG string; when decoded the PNG has the same width and height as the original input image, with pixel value 1 inside the object and 0 elsewhere.
 
     Args:
-        im: Pillow Image
-        variant: SAM2 model variant
-        bboxes: bounding boxes of objects to segment, expressed as a list of dicts: [{"x0":..., "y0":..., "x1":..., "y1":...}, ...]
-        points: points of objects to segment, expressed as a list of dicts [{"x":..., "y":...}, ...]
-        point_labels: list of integar
-    Returns:
-        list: a list of masks in the form of bit64 encoded strings
+        im: The RGB image to segment, as a Pillow Image.
+        variant: SAM2 model variant to load; one of "tiny", "small", "base_plus", or "large".
+        bboxes: Object bounding boxes to segment, as a JSON list of dicts [{"x0":..., "y0":..., "x1":..., "y1":...}, ...] in ABSOLUTE PIXEL coordinates of the input image (top-left corner x0/y0, bottom-right corner x1/y1) -- the albumentations "pascal_voc" format; either bboxes or points must be provided.
+        points: Object points to segment, as a JSON list of dicts [{"x":..., "y":...}, ...] in ABSOLUTE PIXEL coordinates of the input image; requires point_labels.
+        point_labels: JSON list of integers, one per point, where 1 marks a foreground (include) point and 0 a background (exclude) point.
     """
     # input validation
     has_bboxes = type(bboxes) != type(None) and bboxes != ""
@@ -93,19 +92,18 @@ def process_video(
     drop_masks: bool = False,
     ref_frame_idx: int = 0,
     async_frame_load: bool = True,
-):
-    """
-    SAM2 Video Segmentation
+) -> list[dict]:
+    """SAM2 video segmentation: track objects through a video given their segmentation masks on a reference frame.
+
+    Seed the objects to track by supplying their masks on the reference frame (ref_frame_idx); SAM2 then propagates each object forward -- and, when ref_frame_idx is nonzero, also backward -- through every frame. Returns a JSON list of per-frame detections, one entry per tracked object per frame in which it appears (frames where an object is absent are skipped). Each detection is a dict with: "frame" (integer frame index); "track_id" (integer object id, stable across frames); "x", "y", "w", "h" (the object's bounding box as top-left-x, top-left-y, width, height, each NORMALIZED to 0.0-1.0 by dividing by the frame width or height -- this is the albumentations "coco" layout [x_min, y_min, width, height] but normalized to 0-1 rather than absolute pixels, and it is NOT [x_min, y_min, x_max, y_max]; box formats documented at https://albumentations.ai/docs/3-basic-usage/bounding-boxes-augmentations/#bounding-box-formats ); "conf" (always 1); and, unless drop_masks is true, "mask_b64" (a base64-encoded 1-bit PNG string the same width and height as the video frame, 1 inside the object and 0 elsewhere).
 
     Args:
-        video_path: path to video object
-        variant: SAMv2's model variant
-        masks: a list of base64 encoded masks for the reference frame, indicating the objects to be tracked
-        drop_masks: whether to include the base64 encoded mask for each tracked object, if not then only bounding box information will be available
-        ref_frame_idx: the frame index of the reference frame
-        async_frame_load: whether to load frames asyncholously while doing video propogation which will improve inference time
-    Returns:
-        list: a list of tracked objects expressed as a list of dictionary [{"frame":..., "track_id":..., "x":..., "y":...,"w":...,"h":...,"conf":..., "mask_b64":...},...]
+        video_path: Filesystem path to the input video file.
+        variant: SAM2 model variant to load; one of "tiny", "small", "base_plus", or "large".
+        masks: JSON list of base64-encoded 1-bit PNG masks for the reference frame, one per object to track, e.g. ["b'iVBORw0KGgo...'", ...]; the b'...' literal wrapper is accepted and stripped.
+        drop_masks: When true, omit the "mask_b64" field from every detection so only bounding-box information is returned.
+        ref_frame_idx: Frame index the provided masks correspond to; a nonzero value triggers bidirectional tracking (forward and backward from this frame).
+        async_frame_load: When true, load video frames in parallel with propagation to reduce inference time.
     """
     model = load_vid_model(variant=variant)
     masks = json.loads(masks) if isinstance(masks, str) else masks
