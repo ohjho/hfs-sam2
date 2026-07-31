@@ -1,5 +1,6 @@
 import gradio as gr
 import spaces, torch, os, json
+from functools import lru_cache
 from PIL import Image
 from typing import Union
 import numpy as np
@@ -18,9 +19,11 @@ if torch.cuda.get_device_properties(0).major >= 8:
     torch.backends.cudnn.allow_tf32 = True
 
 
-@spaces.GPU
+@lru_cache(maxsize=2)
 def load_im_model(variant):
-    return load_sam_image_model(variant=variant, device="cuda")
+    # CPU-only construction — deliberately NOT @spaces.GPU. ZeroGPU forbids initializing
+    # CUDA in the main process; the move to 'cuda' happens inside _gpu_process_image.
+    return load_sam_image_model(variant=variant, device="cpu")
 
 
 @spaces.GPU
@@ -28,9 +31,6 @@ def load_vid_model(variant):
     return load_sam_video_model(variant=variant, device="cuda")
 
 
-@spaces.GPU
-@torch.inference_mode()
-@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def process_image(
     im: Image.Image,
     variant: str,
@@ -69,9 +69,23 @@ def process_image(
             point_labels
         ), f"{len(points)} points provided but there are {len(point_labels)} labels."
 
-    model = load_im_model(variant=variant)
+    # Warm the model cache in the MAIN process — construction (and any first-time Hub
+    # download) happens here, outside the billed GPU window. The ZeroGPU fork copies
+    # this cache, so _gpu_process_image gets a cache hit.
+    load_im_model(variant)
+    return _gpu_process_image(im, variant, bboxes, points, point_labels)
+
+
+@spaces.GPU(duration=20)
+@torch.inference_mode()
+@torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+def _gpu_process_image(im, variant, bboxes, points, point_labels):
+    # must match the wrapper's calling convention exactly — lru_cache keys
+    # positional and keyword args differently
+    model, processor = load_im_model(variant)
+    model.to("cuda")
     return run_sam_im_inference(
-        model,
+        (model, processor),
         image=im,
         bboxes=bboxes,
         points=points,
