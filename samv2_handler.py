@@ -1,6 +1,7 @@
 import os, shutil
 import glob
 import numpy as np
+import torch
 from PIL import Image
 from typing import Literal, Any, Union, Generic, List
 from pydantic import BaseModel
@@ -200,6 +201,7 @@ def run_sam_video_inference(
     drop_mask: bool = True,
     async_frame_load: bool = False,
     ref_frame_idx: int = 0,
+    video_load_device: str = "cpu",
 ):
     sam_model, processor = model
 
@@ -219,11 +221,32 @@ def run_sam_video_inference(
     w = int(vinfo["frame_width"])
     h = int(vinfo["frame_height"])
 
-    # Load the extracted frames (sorted by name == frame index) for the video session.
-    frame_paths = sorted(glob.glob(os.path.join(vframes_dir, "*.jpg")))
+    # Load the extracted frames for the video session. Filenames carry the frame PTS
+    # (frame_pts=1), which exceeds 5 digits on long videos — sort numerically, not
+    # lexicographically, or frame 100352 would order before 99999.
+    frame_paths = sorted(
+        glob.glob(os.path.join(vframes_dir, "*.jpg")),
+        key=lambda p: int(os.path.splitext(os.path.basename(p))[0]),
+    )
     frames = [Image.open(fp).convert("RGB") for fp in frame_paths]
 
-    session = processor.init_video_session(video=frames, inference_device=device)
+    # bf16 halves frame-storage RAM and matches the app-wide cuda autocast; on CPU there
+    # is no autocast, so fp32 is required to match the model weights' dtype.
+    session_dtype = torch.bfloat16 if "cuda" in str(device) else torch.float32
+    session = processor.init_video_session(
+        video=frames,
+        inference_device=device,
+        # Preprocessing/storing the full video on cuda (the transformers default when only
+        # inference_device is set) OOMs on long videos — normalizing 900+ frames needs
+        # tens of GB transiently. Keep frames on video_load_device ("cpu" by default);
+        # get_frame streams each one to inference_device on access.
+        processing_device=video_load_device,
+        video_storage_device=video_load_device,
+        # Per-frame outputs (incl. per-object 1024^2 high_res_masks) accumulate over the
+        # whole video — park them in RAM as well.
+        inference_state_device="cpu",
+        dtype=session_dtype,
+    )
     # Seed all objects in a single call. add_inputs_to_inference_session overwrites
     # session.obj_with_new_inputs on every call, so adding masks one-per-call would leave
     # only the last object registered as "new" -- the earlier objects would then be treated

@@ -1,5 +1,5 @@
 import gradio as gr
-import spaces, torch, os, json
+import spaces, torch, os, json, math
 from functools import lru_cache
 from PIL import Image
 from typing import Union
@@ -12,6 +12,7 @@ from samv2_handler import (
     logger,
 )
 from toolbox.mask_encoding import b64_mask_decode
+from toolbox.vid_utils import VidInfo
 
 torch.autocast(device_type="cuda", dtype=torch.bfloat16).__enter__()
 if torch.cuda.get_device_properties(0).major >= 8:
@@ -94,9 +95,50 @@ def _gpu_process_image(im, variant, bboxes, points, point_labels):
     )
 
 
+# Rough per-propagation-step GPU seconds per SAM2 variant, incl. CPU->GPU frame
+# streaming and mask post-processing. Tune from Space logs: an underestimate kills the
+# task mid-run (wasting the whole billed window), an overestimate only raises the quota
+# gate / queue penalty for callers.
+GPU_DURATION_PER_FRAME_S = {"tiny": 0.15, "small": 0.2, "base_plus": 0.3, "large": 0.5}
+GPU_DURATION_OVERHEAD_S = 20  # model load into fork + ffmpeg extraction + session preprocessing
+GPU_DURATION_MIN_S = 30
+GPU_DURATION_MAX_S = 300  # videos estimated above this should be downsampled instead
+GPU_DURATION_FALLBACK_S = 120  # probe failed; the previous fixed duration
+
+
+def get_video_gpu_duration(
+    video_path,
+    variant,
+    masks,
+    drop_masks=False,
+    ref_frame_idx=0,
+    async_frame_load=True,
+    sample_fps=None,
+    every_x=None,
+    video_load_device="cpu",
+):
+    # Signature must mirror process_video exactly — spaces calls this with the same args,
+    # in the main process before the GPU is requested (probe time is not billed).
+    info = VidInfo(video_path) if video_path else None
+    if not info or not info.get("frame_count") or not info.get("fps"):
+        return GPU_DURATION_FALLBACK_S
+    n = info["frame_count"]
+    sample_fps = sample_fps or None  # same falsy coercion as process_video
+    every_x = int(every_x) if every_x else None
+    if sample_fps:
+        n = min(n, math.ceil(info["duration"] * min(info["fps"], sample_fps)))
+    elif every_x:
+        n = math.ceil(n / every_x)
+    steps = n + int(ref_frame_idx or 0)  # nonzero ref adds the reverse pass (ref..0)
+    est = GPU_DURATION_OVERHEAD_S + steps * GPU_DURATION_PER_FRAME_S.get(variant, 0.5)
+    duration = max(GPU_DURATION_MIN_S, min(GPU_DURATION_MAX_S, math.ceil(est)))
+    logger.info(f"requesting {duration}s of GPU time for {steps} propagation steps")
+    return duration
+
+
 @spaces.GPU(
-    duration=120
-)  # user must have 2-minute of inference time left at the time of calling
+    duration=get_video_gpu_duration
+)  # caller must have quota >= the estimate, which scales with video length
 @torch.inference_mode()
 @torch.autocast(device_type="cuda", dtype=torch.bfloat16)
 def process_video(
@@ -106,19 +148,27 @@ def process_video(
     drop_masks: bool = False,
     ref_frame_idx: int = 0,
     async_frame_load: bool = True,
+    sample_fps: float = None,
+    every_x: int = None,
+    video_load_device: str = "cpu",
 ) -> list[dict]:
     """SAM2 video segmentation: track objects through a video given their segmentation masks on a reference frame.
 
-    Seed the objects to track by supplying their masks on the reference frame (ref_frame_idx); SAM2 then propagates each object forward -- and, when ref_frame_idx is nonzero, also backward -- through every frame. Returns a JSON list of per-frame detections, one entry per tracked object per frame in which it appears (frames where an object is absent are skipped). Each detection is a dict with: "frame" (integer frame index); "track_id" (integer object id, stable across frames); "x", "y", "w", "h" (the object's bounding box as top-left-x, top-left-y, width, height, each NORMALIZED to 0.0-1.0 by dividing by the frame width or height -- this is the albumentations "coco" layout [x_min, y_min, width, height] but normalized to 0-1 rather than absolute pixels, and it is NOT [x_min, y_min, x_max, y_max]; box formats documented at https://albumentations.ai/docs/3-basic-usage/bounding-boxes-augmentations/#bounding-box-formats ); "conf" (always 1); and, unless drop_masks is true, "mask_b64" (a base64-encoded 1-bit PNG string the same width and height as the video frame, 1 inside the object and 0 elsewhere).
+    Seed the objects to track by supplying their masks on the reference frame (ref_frame_idx); SAM2 then propagates each object forward -- and, when ref_frame_idx is nonzero, also backward -- through every frame. The video can optionally be downsampled before tracking with sample_fps or every_x; all frame indices (the "frame" field of every detection AND the ref_frame_idx input) are 0-based positions in the SAMPLED frame sequence, NOT original video frame numbers, so with every_x=5 the detection "frame": 2 corresponds to original frame 10. Returns a JSON list of per-frame detections, one entry per tracked object per frame in which it appears (frames where an object is absent are skipped). Each detection is a dict with: "frame" (integer sampled-frame index as defined above); "track_id" (integer object id, stable across frames); "x", "y", "w", "h" (the object's bounding box as top-left-x, top-left-y, width, height, each NORMALIZED to 0.0-1.0 by dividing by the frame width or height -- this is the albumentations "coco" layout [x_min, y_min, width, height] but normalized to 0-1 rather than absolute pixels, and it is NOT [x_min, y_min, x_max, y_max]; box formats documented at https://albumentations.ai/docs/3-basic-usage/bounding-boxes-augmentations/#bounding-box-formats ); "conf" (always 1); and, unless drop_masks is true, "mask_b64" (a base64-encoded 1-bit PNG string the same width and height as the video frame, 1 inside the object and 0 elsewhere).
 
     Args:
         video_path: Filesystem path to the input video file.
         variant: SAM2 model variant to load; one of "tiny", "small", "base_plus", or "large".
         masks: JSON list of base64-encoded 1-bit PNG masks for the reference frame, one per object to track, e.g. ["b'iVBORw0KGgo...'", ...]; the b'...' literal wrapper is accepted and stripped.
         drop_masks: When true, omit the "mask_b64" field from every detection so only bounding-box information is returned.
-        ref_frame_idx: Frame index the provided masks correspond to; a nonzero value triggers bidirectional tracking (forward and backward from this frame).
-        async_frame_load: When true, load video frames in parallel with propagation to reduce inference time.
+        ref_frame_idx: Index of the frame the provided masks correspond to, counted in the SAMPLED frame sequence when sample_fps or every_x is set; a nonzero value triggers bidirectional tracking (forward and backward from this frame).
+        async_frame_load: Reserved for future use; currently has no effect.
+        sample_fps: Sample the video down to roughly this many frames per second before tracking (clamped to the source fps; takes precedence over every_x); leave empty to keep every frame.
+        every_x: Keep only every Nth frame of the video before tracking, e.g. 5 keeps original frames 0, 5, 10, ... (ignored when sample_fps is set); leave empty to keep every frame.
+        video_load_device: Device the video frames are preprocessed and stored on: "cpu" (default) streams frames to the GPU one at a time and keeps GPU memory low; "cuda" holds the whole preprocessed video in GPU memory, which is faster per frame but runs out of GPU memory on long videos.
     """
+    sample_fps = sample_fps or None  # empty/0 gr.Number must not activate the filter
+    every_x = int(every_x) if every_x else None
     model = load_vid_model(variant=variant)
     masks = json.loads(masks) if isinstance(masks, str) else masks
     logger.debug(f"masks---\n{masks}")
@@ -132,10 +182,13 @@ def process_video(
         video_path=video_path,
         masks=masks,
         device="cuda",
+        sample_fps=sample_fps,
+        every_x=every_x,
         do_tidy_up=True,
         drop_mask=drop_masks,
         async_frame_load=async_frame_load,
         ref_frame_idx=ref_frame_idx,
+        video_load_device=video_load_device,
     )
 
 
@@ -196,7 +249,24 @@ with gr.Blocks() as demo:
                 ),
                 gr.Checkbox(
                     label="async frame load",
-                    info="start inference in parallel to frame loading",
+                    info="reserved; currently has no effect",
+                ),
+                gr.Number(
+                    label="Sample FPS",
+                    info="downsample the video to this many frames per second before tracking; empty = every frame",
+                    value=None,
+                ),
+                gr.Number(
+                    label="Every Xth Frame",
+                    info="keep only every Nth frame before tracking; ignored when Sample FPS is set",
+                    value=None,
+                    precision=0,
+                ),
+                gr.Dropdown(
+                    label="Video Load Device",
+                    info="where preprocessed frames are stored; cpu streams them to the GPU per frame",
+                    choices=["cpu", "cuda"],
+                    value="cpu",
                 ),
             ],
             outputs=gr.JSON(label="Output JSON"),

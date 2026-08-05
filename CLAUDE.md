@@ -10,6 +10,8 @@ SAM2 is provided by HuggingFace `transformers` (`Sam2Model`/`Sam2Processor` for 
 
 The Space config lives in the YAML frontmatter of `README.md` (`sdk: gradio`, `app_file: app.py`).
 
+`async_frame_load` on `process_video` is currently a no-op; a verified implementation design is parked in `DEFERRED_PLANS.md`.
+
 ## Running
 
 ```bash
